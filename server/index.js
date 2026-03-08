@@ -1643,6 +1643,18 @@ app.post("/api/functions/:name", async (req, res) => {
       }
 
       if (action === "register") {
+        const { rows: existingRows } = await query(
+          "select 1 from users where email = $1 limit 1",
+          [data.email]
+        );
+        if (existingRows[0]) {
+          res.json({
+            success: false,
+            error: "An account with this email already exists.",
+          });
+          return;
+        }
+
         const passwordHash = await bcrypt.hash(data.password, 10);
         const { rows: userRows } = await query(
           `insert into users (email, password_hash, first_name, last_name, role, phone)
