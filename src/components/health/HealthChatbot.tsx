@@ -22,6 +22,60 @@ const HealthChatbot: React.FC<HealthChatbotProps> = ({ isOpen, onClose }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const renderInlineFormatting = (text: string) => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={index}>{part.slice(2, -2)}</strong>;
+      }
+      return <React.Fragment key={index}>{part}</React.Fragment>;
+    });
+  };
+
+  const renderMessageContent = (content: string) => {
+    const lines = content.split(/\r?\n/);
+    const blocks: React.ReactNode[] = [];
+    let pendingList: string[] = [];
+
+    const flushList = () => {
+      if (pendingList.length === 0) return;
+      blocks.push(
+        <ul key={`list-${blocks.length}`} className="list-disc pl-5 space-y-1">
+          {pendingList.map((item, index) => (
+            <li key={`${item}-${index}`}>{renderInlineFormatting(item)}</li>
+          ))}
+        </ul>
+      );
+      pendingList = [];
+    };
+
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      const bullet = trimmed.match(/^[-*]\s+(.+)/);
+
+      if (bullet) {
+        pendingList.push(bullet[1]);
+        return;
+      }
+
+      flushList();
+
+      if (!trimmed) {
+        blocks.push(<div key={`space-${blocks.length}`} className="h-2" />);
+        return;
+      }
+
+      blocks.push(
+        <p key={`p-${blocks.length}`} className="leading-relaxed">
+          {renderInlineFormatting(line)}
+        </p>
+      );
+    });
+
+    flushList();
+    return blocks;
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -101,7 +155,7 @@ const HealthChatbot: React.FC<HealthChatbotProps> = ({ isOpen, onClose }) => {
     <div className={`fixed z-50 transition-all duration-300 ${
       isExpanded 
         ? 'inset-4 md:inset-8' 
-        : 'bottom-4 right-4 w-full max-w-md h-[600px]'
+        : 'bottom-2 left-2 right-2 h-[min(600px,calc(100dvh-1rem))] md:bottom-4 md:right-4 md:left-auto md:w-full md:max-w-md md:h-[600px]'
     }`}>
       <div className="flex flex-col h-full bg-slate-900 rounded-2xl border border-slate-700/50 shadow-2xl overflow-hidden">
         {/* Header */}
@@ -150,7 +204,9 @@ const HealthChatbot: React.FC<HealthChatbotProps> = ({ isOpen, onClose }) => {
                   ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white'
                   : 'bg-slate-800 text-slate-200'
               }`}>
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                <div className="text-sm whitespace-pre-wrap break-words">
+                  {renderMessageContent(message.content)}
+                </div>
                 <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-purple-200' : 'text-slate-500'}`}>
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
