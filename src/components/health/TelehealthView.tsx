@@ -1481,9 +1481,6 @@ const TelehealthView: React.FC<TelehealthViewProps> = ({ onNavigate }) => {
                 >
                   Start New Call
                 </button>
-                <button className="px-5 py-2 rounded-full bg-slate-800 text-white text-sm font-semibold hover:bg-slate-700 transition-all">
-                  View Notes
-                </button>
                 <button
                   onClick={() => onNavigate?.('dashboard')}
                   className="px-5 py-2 rounded-full border border-slate-700 text-slate-200 text-sm font-semibold hover:bg-slate-800 transition-all"
@@ -1519,7 +1516,7 @@ const TelehealthView: React.FC<TelehealthViewProps> = ({ onNavigate }) => {
               <div className="rounded-2xl border border-slate-800/70 bg-slate-900/70 p-4">
                 <h3 className="text-white font-semibold mb-2">Next Steps</h3>
                 <p className="text-slate-400 text-sm">
-                  Save notes, share recordings, or start a new session. Everything is ready when you are.
+                  Share recordings or start a new session. Everything is ready when you are.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
                   <span className="px-3 py-1 rounded-full border border-slate-800 bg-slate-950/50">Secure archive</span>
