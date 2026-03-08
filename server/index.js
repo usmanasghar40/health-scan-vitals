@@ -2221,8 +2221,73 @@ app.post("/api/functions/:name", async (req, res) => {
     }
 
     if (name === "health-chatbot") {
-      const message = body.message || "";
-      const response = `Local assistant response: ${message.slice(0, 200)}. For a real assistant, connect to your preferred model locally.`;
+      const message = String(body.message || "").trim();
+      const conversationHistory = Array.isArray(body.conversationHistory)
+        ? body.conversationHistory
+        : [];
+      const openAiKey = process.env.OPENAI_API_KEY;
+      const openAiModel = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+      if (!message) {
+        return jsonError(res, "message is required.");
+      }
+
+      if (openAiKey) {
+        try {
+          const history = conversationHistory
+            .filter(
+              (item) =>
+                item &&
+                (item.role === "user" || item.role === "assistant") &&
+                typeof item.content === "string"
+            )
+            .slice(-10)
+            .map((item) => ({
+              role: item.role,
+              content: String(item.content).slice(0, 4000),
+            }));
+
+          const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${openAiKey}`,
+            },
+            body: JSON.stringify({
+              model: openAiModel,
+              temperature: 0.3,
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You are MedAssist AI for a healthcare app. Provide concise, educational information only, " +
+                    "avoid diagnosis claims, and include a brief safety note when symptoms may be urgent.",
+                },
+                ...history,
+                { role: "user", content: message },
+              ],
+            }),
+          });
+
+          const payload = await aiResponse.json().catch(() => null);
+          if (!aiResponse.ok) {
+            const apiError = payload?.error?.message || "OpenAI request failed.";
+            throw new Error(apiError);
+          }
+
+          const content = payload?.choices?.[0]?.message?.content;
+          if (content && String(content).trim()) {
+            res.json({ response: String(content).trim() });
+            return;
+          }
+        } catch (error) {
+          console.error("Health chatbot OpenAI error:", error);
+        }
+      }
+
+      const response =
+        "I can help with general health education, but AI service is currently unavailable. " +
+        "Please try again shortly. If this may be urgent (chest pain, breathing trouble, severe symptoms), seek immediate care.";
       res.json({ response });
       return;
     }
