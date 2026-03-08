@@ -2,7 +2,7 @@ create extension if not exists "uuid-ossp";
 
 create table if not exists users (
     id uuid primary key default uuid_generate_v4 (),
-    email text unique not null,
+    email text not null,
     password_hash text not null,
     first_name text not null,
     last_name text not null,
@@ -10,6 +10,21 @@ create table if not exists users (
     phone text,
     created_at timestamptz default now()
 );
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'users_email_key'
+      and conrelid = 'users'::regclass
+  ) then
+    alter table users drop constraint users_email_key;
+  end if;
+end $$;
+
+create unique index if not exists users_email_role_unique_idx
+  on users (lower(email), role);
 
 create table if not exists provider_profiles (
   id uuid primary key default uuid_generate_v4(),

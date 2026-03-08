@@ -100,7 +100,7 @@ interface UserContextType {
   isLoading: boolean;
   providerProfile: ProviderProfile | null;
   patientProfile: PatientProfile | null;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string, role: UserRole) => Promise<{ success: boolean; error?: string }>;
   register: (data: {
     email: string;
     password: string;
@@ -248,12 +248,12 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem(storageKey, JSON.stringify(payload));
   }, [currentUser, isAuthenticated, patientProfile, providerProfile, userRole]);
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (email: string, password: string, role: UserRole): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
     try {
       const { data, error } = await invokeWithRetry('user-management', {
         action: 'login',
-        data: { email, password }
+        data: { email, password, role }
       });
 
       // Check for network/invoke errors first
@@ -372,7 +372,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       // Auto-login after successful registration
-      return await login(regData.email, regData.password);
+      return await login(regData.email, regData.password, regData.role);
 
     } catch (err: any) {
       console.error('Register exception:', err);

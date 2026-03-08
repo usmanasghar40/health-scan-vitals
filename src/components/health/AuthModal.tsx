@@ -98,7 +98,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'l
     setError(null);
 
     if (mode === 'login') {
-      const result = await login(email, password);
+      const result = await login(email, password, role);
       if (result.success) {
         setSuccess(true);
         setTimeout(() => {
@@ -239,14 +239,16 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'l
           </div>
         ) : step === 'info' ? (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            {/* Role Selection for Register */}
-            {mode === 'register' && (
+            {/* Role Selection */}
+            {(mode === 'login' || mode === 'register') && (
               <div>
-                <label className="text-sm text-slate-400 mb-2 block">I am a</label>
+                <label className="text-sm text-slate-400 mb-2 block">
+                  {mode === 'login' ? 'Sign in as' : 'I am a'}
+                </label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setRole('patient')}
+                    onClick={() => { setRole('patient'); setError(null); }}
                     className={`p-4 rounded-xl border transition-all flex flex-col items-center gap-2 ${
                       role === 'patient'
                         ? 'bg-cyan-500/10 border-cyan-500 text-cyan-400'
@@ -258,7 +260,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'l
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRole('provider')}
+                    onClick={() => { setRole('provider'); setError(null); }}
                     className={`p-4 rounded-xl border transition-all flex flex-col items-center gap-2 ${
                       role === 'provider'
                         ? 'bg-purple-500/10 border-purple-500 text-purple-400'
@@ -400,7 +402,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'l
                 </>
               ) : (
                 <>
-                  {mode === 'login' ? 'Sign In' : role === 'provider' ? 'Continue to Schedule' : 'Create Account'}
+                  {mode === 'login'
+                    ? `Sign In as ${role === 'patient' ? 'Patient' : 'Provider'}`
+                    : role === 'provider'
+                      ? 'Continue to Schedule'
+                      : 'Create Account'}
                   {mode === 'register' && role === 'provider' && <ChevronRight className="w-5 h-5" />}
                 </>
               )}

@@ -19,6 +19,7 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 
 const DEFAULT_USER_ID = "default_user";
+const VALID_USER_ROLES = new Set(["patient", "provider"]);
 
 const query = (text, params) => pool.query(text, params);
 
@@ -1620,13 +1621,22 @@ app.post("/api/functions/:name", async (req, res) => {
       const data = body.data || {};
 
       if (action === "login") {
+        const requestedRole = String(data.role || "").toLowerCase();
+        if (!VALID_USER_ROLES.has(requestedRole)) {
+          res.json({ success: false, error: "Please select account type." });
+          return;
+        }
+
         const { rows } = await query(
-          "select * from users where email = $1",
-          [data.email]
+          "select * from users where lower(email) = lower($1) and role = $2",
+          [data.email, requestedRole]
         );
         const user = rows[0];
         if (!user) {
-          res.json({ success: false, error: "User not found" });
+          res.json({
+            success: false,
+            error: `No ${requestedRole} account found with this email.`,
+          });
           return;
         }
         const isBcryptHash = user.password_hash?.startsWith("$2");
@@ -1643,14 +1653,20 @@ app.post("/api/functions/:name", async (req, res) => {
       }
 
       if (action === "register") {
+        const requestedRole = String(data.role || "").toLowerCase();
+        if (!VALID_USER_ROLES.has(requestedRole)) {
+          res.json({ success: false, error: "Invalid account role." });
+          return;
+        }
+
         const { rows: existingRows } = await query(
-          "select 1 from users where email = $1 limit 1",
-          [data.email]
+          "select 1 from users where lower(email) = lower($1) and role = $2 limit 1",
+          [data.email, requestedRole]
         );
         if (existingRows[0]) {
           res.json({
             success: false,
-            error: "An account with this email already exists.",
+            error: `A ${requestedRole} account with this email already exists.`,
           });
           return;
         }
@@ -1665,14 +1681,14 @@ app.post("/api/functions/:name", async (req, res) => {
             passwordHash,
             data.firstName,
             data.lastName,
-            data.role,
+            requestedRole,
             data.phone || null,
           ]
         );
         const user = userRows[0];
 
         let profile = null;
-        if (data.role === "provider") {
+        if (requestedRole === "provider") {
           const { rows: profileRows } = await query(
             `insert into provider_profiles
              (user_id, specialty, accepting_new_patients, languages, rating, review_count)
@@ -1718,7 +1734,7 @@ app.post("/api/functions/:name", async (req, res) => {
              values ($1,$2,$3,$4, now() + interval '7 days')`,
             [user.id, "pehd-pro-199", "trialing", "monthly"]
           );
-        } else if (data.role === "patient") {
+        } else if (requestedRole === "patient") {
           const { rows: profileRows } = await query(
             `insert into patient_profiles (user_id, allergies, conditions, medications)
              values ($1,$2,$3,$4)
