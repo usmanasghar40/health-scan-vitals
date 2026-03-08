@@ -2863,6 +2863,20 @@ app.post("/api/functions/:name", async (req, res) => {
   }
 });
 
+const clientDistPath = path.join(__dirname, "..", "dist");
+
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(clientDistPath));
+
+  // React Router fallback: serve index.html for non-API routes.
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) {
+      return next();
+    }
+    return res.sendFile(path.join(clientDistPath, "index.html"));
+  });
+}
+
 const port = process.env.PORT || 3001;
 app.listen(port, () => {
   console.log(`Local API running on http://localhost:${port}`);

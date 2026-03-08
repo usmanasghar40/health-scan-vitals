@@ -230,6 +230,32 @@ All sensitive actions (billing, telehealth, scribe, etc.) expect a valid JWT and
 - **Database:** Use a hosted Postgres (e.g. Supabase, Neon, RDS). Run `schema.sql` and optionally `seed.sql` (or adapt for production data).
 - **Docker:** Use `docker-compose` only for local Postgres; the app itself is not containerized in this repo but can be added.
 
+### Deploy on WHM/cPanel via GitHub
+
+This repo now supports single-app deployment: Express serves both `/api/*` and the built React app from `dist/` in production.
+
+1. In WHM/cPanel, create a Node.js app for account `pehd` (cPanel feature: **Setup Node.js App**):
+   - **Application root:** your Git clone path (example: `/home/pehd/health-scan-vitals`)
+   - **Application URL:** `pehd.org` (or your chosen subpath)
+   - **Application startup file:** `server/index.js`
+   - **Environment:** `production`
+2. In cPanel **Git Version Control**, clone your GitHub repo into the same application root.
+3. In `server/.env`, set production values (use `server/.env.example` as template).
+4. Provision PostgreSQL and run:
+   - `psql -U <user> -d <db> -f server/db/schema.sql`
+   - `psql -U <user> -d <db> -f server/db/seed.sql` (optional)
+5. On each push to `main`, use cPanel Git **Pull or Deploy**. The `.cpanel.yml` hook runs:
+   - `npm ci`
+   - `npm run build`
+   - `npm prune --omit=dev`
+   - restart signal via `tmp/restart.txt`
+
+If your host does not auto-run deployment tasks, run this manually in app root:
+
+```bash
+npm run deploy:cpanel
+```
+
 ---
 
 ## Security and Compliance
