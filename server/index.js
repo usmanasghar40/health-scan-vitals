@@ -102,7 +102,9 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" })
   : null;
-const STRIPE_PLAN_LOOKUP_KEY = "pehd-pro-199-monthly";
+const STRIPE_PLAN_LOOKUP_KEY =
+  process.env.STRIPE_PLAN_LOOKUP_KEY || "pehd-pro-199-monthly";
+const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID;
 let cachedStripePriceId = null;
 
 const dailyRequest = async (path, options = {}) => {
@@ -128,6 +130,10 @@ const dailyRequest = async (path, options = {}) => {
 const getStripePriceId = async () => {
   if (!stripe) {
     throw new Error("Stripe secret key is required.");
+  }
+  if (STRIPE_PRICE_ID && String(STRIPE_PRICE_ID).trim()) {
+    cachedStripePriceId = String(STRIPE_PRICE_ID).trim();
+    return cachedStripePriceId;
   }
   if (cachedStripePriceId) return cachedStripePriceId;
 
