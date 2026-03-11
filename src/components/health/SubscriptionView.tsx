@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost } from '@/lib/api';
 import { useUser } from '@/contexts/UserContext';
 import { CheckCircle, Sparkles, Shield, CreditCard } from 'lucide-react';
+import { toast } from '@/components/ui/sonner';
 
 interface SubscriptionViewProps {
   userType?: 'patient' | 'provider';
@@ -31,6 +32,10 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({ gateMessage,
     const params = new URLSearchParams(window.location.search);
     return params.get('session_id');
   }, []);
+  const checkoutUserId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('uid');
+  }, []);
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -59,7 +64,14 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({ gateMessage,
   };
 
   useEffect(() => {
-    if (checkoutStatus !== 'success' || !checkoutSessionId || !currentUser?.id) return;
+    if (
+      checkoutStatus !== 'success' ||
+      !checkoutSessionId ||
+      !currentUser?.id ||
+      checkoutUserId !== currentUser.id
+    ) {
+      return;
+    }
     const processedKey = `pehd-checkout-${currentUser.id}`;
     if (localStorage.getItem(processedKey) === checkoutSessionId) return;
     const confirm = async () => {
@@ -83,28 +95,75 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({ gateMessage,
       }
     };
     confirm();
-  }, [checkoutStatus, checkoutSessionId, currentUser?.id]);
+  }, [checkoutStatus, checkoutSessionId, checkoutUserId, currentUser?.id]);
 
   useEffect(() => {
-    if (checkoutStatus !== 'cancel' || !currentUser?.id) return;
+    if (
+      checkoutStatus !== 'cancel' ||
+      !currentUser?.id ||
+      checkoutUserId !== currentUser.id
+    ) {
+      return;
+    }
     const recordCancel = async () => {
       try {
+        const processedKey = `pehd-checkout-cancel-${currentUser.id}`;
+        if (localStorage.getItem(processedKey) === '1') return;
         await apiPost('/billing/record-checkout', {
           userId: currentUser.id,
           status: 'cancel',
         });
+        localStorage.setItem(processedKey, '1');
       } catch {
         // noop
       }
     };
     recordCancel();
-  }, [checkoutStatus, currentUser?.id]);
+  }, [checkoutStatus, checkoutUserId, currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    if (checkoutUserId !== currentUser.id) return;
+
+    if (checkoutStatus === 'cancel') {
+      const key = `pehd-toast-checkout-cancel-${currentUser.id}`;
+      if (localStorage.getItem(key) !== '1') {
+        toast.info('Checkout canceled. You can start your trial anytime.');
+        localStorage.setItem(key, '1');
+      }
+      return;
+    }
+
+    if (checkoutStatus === 'success' && checkoutSessionId) {
+      const key = `pehd-toast-checkout-success-${currentUser.id}-${checkoutSessionId}`;
+      if (localStorage.getItem(key) !== '1') {
+        if (effectiveStatus === 'active') {
+          toast.success('Subscription started successfully. Welcome aboard!');
+        } else if (effectiveStatus === 'trialing') {
+          toast.success('Trial activated. Enjoy full access during your free period.');
+        }
+        localStorage.setItem(key, '1');
+      }
+    }
+  }, [checkoutStatus, checkoutSessionId, checkoutUserId, currentUser?.id, effectiveStatus]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    if (!trialEndsAt || trialDaysRemaining === null || trialDaysRemaining <= 0) return;
+    const key = `pehd-toast-trial-warning-${currentUser.id}`;
+    if (localStorage.getItem(key) === '1') return;
+    toast.warn(
+      `Your free trial ends in ${trialDaysRemaining} days. Subscribe now or features will be locked after the trial.`
+    );
+    localStorage.setItem(key, '1');
+  }, [currentUser?.id, trialDaysRemaining, trialEndsAt]);
 
   useEffect(() => {
     if (!checkoutStatus) return;
     const params = new URLSearchParams(window.location.search);
     params.delete('checkout');
     params.delete('session_id');
+    params.delete('uid');
     const next = params.toString();
     const nextUrl = `${window.location.pathname}${next ? `?${next}` : ''}`;
     window.history.replaceState({}, '', nextUrl);
@@ -172,21 +231,6 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({ gateMessage,
         </div>
       </div>
 
-      {checkoutStatus === 'success' && checkoutSessionId && effectiveStatus === 'active' && (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-emerald-200">
-          Subscription started successfully. Welcome aboard!
-        </div>
-      )}
-      {checkoutStatus === 'success' && checkoutSessionId && effectiveStatus === 'trialing' && (
-        <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-cyan-200">
-          Trial activated. Enjoy full access during your free period.
-        </div>
-      )}
-      {checkoutStatus === 'cancel' && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200">
-          Checkout canceled. You can start your trial anytime.
-        </div>
-      )}
       {error && (
         <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-rose-200">
           {error}
@@ -201,12 +245,6 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({ gateMessage,
           >
             Refresh status
           </button>
-        </div>
-      )}
-      {trialEndsAt && trialDaysRemaining !== null && trialDaysRemaining > 0 && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200">
-          Your free trial ends in {trialDaysRemaining} days. Subscribe now or features will be
-          locked after the trial.
         </div>
       )}
       {effectiveStatus === 'expired' && (

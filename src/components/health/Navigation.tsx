@@ -33,7 +33,10 @@ const Navigation: React.FC<NavigationProps> = ({
   const unreadPlanCount = notifications.filter(n => !n.is_read && n.type === 'treatment_plan').length;
 
   useEffect(() => {
-    if (!isAuthenticated || !currentUser?.id) return;
+    if (!isAuthenticated || !currentUser?.id) {
+      setNotifications([]);
+      return;
+    }
 
     const loadNotifications = async () => {
       try {

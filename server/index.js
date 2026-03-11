@@ -398,6 +398,17 @@ app.post("/api/billing/create-checkout-session", async (req, res) => {
     const origin =
       req.headers.origin ||
       (req.headers.referer ? new URL(req.headers.referer).origin : "http://localhost:8080");
+    const successParams = new URLSearchParams({
+      tab: "subscription",
+      checkout: "success",
+      session_id: "{CHECKOUT_SESSION_ID}",
+      uid: String(userId),
+    });
+    const cancelParams = new URLSearchParams({
+      tab: "subscription",
+      checkout: "cancel",
+      uid: String(userId),
+    });
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
@@ -407,8 +418,8 @@ app.post("/api/billing/create-checkout-session", async (req, res) => {
         ? { trial_end: Math.floor(trialEndsAt.getTime() / 1000) }
         : {},
       allow_promotion_codes: true,
-      success_url: `${origin}/?tab=subscription&checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/?tab=subscription&checkout=cancel`,
+      success_url: `${origin}/?${successParams.toString()}`,
+      cancel_url: `${origin}/?${cancelParams.toString()}`,
     });
     await query(
       `update subscriptions
@@ -1516,10 +1527,19 @@ app.get("/api/notifications", async (req, res) => {
 
 app.patch("/api/notifications/:id/read", async (req, res) => {
   const { id } = req.params;
-  await query(
-    "update notifications set is_read = true where id = $1",
-    [id]
+  const { userId } = req.body || {};
+  if (!userId) {
+    jsonError(res, "userId is required");
+    return;
+  }
+  const { rowCount } = await query(
+    "update notifications set is_read = true where id = $1 and user_id = $2",
+    [id, userId]
   );
+  if (!rowCount) {
+    jsonError(res, "Notification not found", 404);
+    return;
+  }
   res.json({ success: true });
 });
 
