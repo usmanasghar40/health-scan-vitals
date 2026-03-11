@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '@/contexts/UserContext';
 import { apiGet, apiPatch } from '@/lib/api';
+import { toast } from '@/components/ui/sonner';
 import AuthModal from './AuthModal';
 import { 
   Heart, Menu, X, User, LogOut, Settings, Calendar, 
@@ -28,6 +29,7 @@ const Navigation: React.FC<NavigationProps> = ({
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const toastSeenRef = useRef<Set<string>>(new Set());
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const unreadMessageCount = notifications.filter(n => !n.is_read && n.type === 'message').length;
   const unreadPlanCount = notifications.filter(n => !n.is_read && n.type === 'treatment_plan').length;
@@ -35,13 +37,79 @@ const Navigation: React.FC<NavigationProps> = ({
   useEffect(() => {
     if (!isAuthenticated || !currentUser?.id) {
       setNotifications([]);
+      toastSeenRef.current = new Set();
       return;
     }
+    const toastStorageKey = `pehd-notification-toasts-${currentUser.id}`;
+
+    try {
+      const raw = localStorage.getItem(toastStorageKey);
+      const storedIds = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(storedIds)) {
+        toastSeenRef.current = new Set(storedIds.map((value) => String(value)));
+      } else {
+        toastSeenRef.current = new Set();
+      }
+    } catch {
+      toastSeenRef.current = new Set();
+    }
+
+    const persistSeenIds = () => {
+      const ids = Array.from(toastSeenRef.current);
+      const trimmed = ids.slice(Math.max(0, ids.length - 300));
+      localStorage.setItem(toastStorageKey, JSON.stringify(trimmed));
+    };
+
+    const showNotificationToast = (notification: any) => {
+      const title = notification?.title || 'New notification';
+      const id = `notif-${notification?.id}`;
+      const options = {
+        id,
+        description: notification?.body || undefined,
+      };
+
+      switch (notification?.type) {
+        case 'billing':
+          toast.warning(title, options);
+          break;
+        case 'appointment':
+          toast.info(title, options);
+          break;
+        case 'lab_results':
+          toast.success(title, options);
+          break;
+        case 'message':
+          toast.info(title, options);
+          break;
+        default:
+          toast.info(title, options);
+          break;
+      }
+    };
 
     const loadNotifications = async () => {
       try {
         const data = await apiGet(`/notifications?userId=${currentUser.id}`);
-        setNotifications(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+        setNotifications(list);
+
+        const unseenUnread = list
+          .filter((item) => item && !item.is_read && item.id)
+          .filter((item) => !toastSeenRef.current.has(String(item.id)))
+          .sort(
+            (a, b) =>
+              new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+          )
+          .slice(0, 3);
+
+        unseenUnread.forEach((notification) => {
+          showNotificationToast(notification);
+          toastSeenRef.current.add(String(notification.id));
+        });
+
+        if (unseenUnread.length > 0) {
+          persistSeenIds();
+        }
       } catch (err) {
         console.error('Failed to load notifications:', err);
       }
