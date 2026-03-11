@@ -152,7 +152,7 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({ gateMessage,
     if (!trialEndsAt || trialDaysRemaining === null || trialDaysRemaining <= 0) return;
     const key = `pehd-toast-trial-warning-${currentUser.id}`;
     if (localStorage.getItem(key) === '1') return;
-    toast.warn(
+    toast.warning(
       `Your free trial ends in ${trialDaysRemaining} days. Subscribe now or features will be locked after the trial.`
     );
     localStorage.setItem(key, '1');
