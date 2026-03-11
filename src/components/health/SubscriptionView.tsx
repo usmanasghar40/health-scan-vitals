@@ -181,6 +181,12 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({ gateMessage,
         userId: currentUser?.id,
         email: currentUser?.email,
       });
+      if (response?.bypass) {
+        toast.success(response?.message || 'Unlimited Pro access is already enabled for this account.');
+        await refreshStatus();
+        onStatusRefresh?.();
+        return;
+      }
       if (response?.url) {
         window.location.href = response.url;
         return;

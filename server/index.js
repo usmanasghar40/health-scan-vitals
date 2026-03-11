@@ -105,7 +105,18 @@ const stripe = STRIPE_SECRET_KEY
 const STRIPE_PLAN_LOOKUP_KEY =
   process.env.STRIPE_PLAN_LOOKUP_KEY || "pehd-pro-199-monthly";
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID;
+const ADMIN_PRO_EMAILS = new Set(
+  (process.env.ADMIN_PRO_EMAILS ||
+    "sidhujutt6568@gmail.com,drbtano@gmail.com")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
 let cachedStripePriceId = null;
+
+const isAdminProEmail = (email) =>
+  typeof email === "string" &&
+  ADMIN_PRO_EMAILS.has(String(email).trim().toLowerCase());
 
 const dailyRequest = async (path, options = {}) => {
   if (!DAILY_API_KEY) {
@@ -181,6 +192,46 @@ const getOrCreateStripeCustomer = async ({ email, userId }) => {
   return customer.id;
 };
 
+const ensureAdminUnlimitedSubscription = async (userId) => {
+  const { rows } = await query(
+    `select * from subscriptions
+     where user_id = $1
+     order by started_at desc
+     limit 1`,
+    [userId]
+  );
+  const existing = rows[0] || null;
+  if (existing) {
+    const needsUpdate =
+      existing.status !== "active" ||
+      existing.plan_id !== "pehd-pro-admin" ||
+      existing.billing_cycle !== "lifetime" ||
+      existing.trial_ends_at !== null;
+    if (!needsUpdate) return existing;
+    const { rows: updated } = await query(
+      `update subscriptions
+       set plan_id = $1,
+           status = 'active',
+           billing_cycle = 'lifetime',
+           trial_ends_at = null,
+           stripe_subscription_id = null,
+           started_at = coalesce(started_at, now())
+       where id = $2
+       returning *`,
+      ["pehd-pro-admin", existing.id]
+    );
+    return updated[0] || existing;
+  }
+  const { rows: inserted } = await query(
+    `insert into subscriptions
+     (user_id, plan_id, status, billing_cycle, trial_ends_at, started_at)
+     values ($1,$2,'active','lifetime',null,now())
+     returning *`,
+    [userId, "pehd-pro-admin"]
+  );
+  return inserted[0] || null;
+};
+
 const syncStripeSubscription = async (userId) => {
   if (!stripe) return null;
   const { rows: userRows } = await query(
@@ -189,6 +240,9 @@ const syncStripeSubscription = async (userId) => {
   );
   const user = userRows[0];
   if (!user || user.role !== "provider") return null;
+  if (isAdminProEmail(user.email)) {
+    return ensureAdminUnlimitedSubscription(user.id);
+  }
 
   const { rows } = await query(
     `select * from subscriptions
@@ -376,9 +430,20 @@ app.post("/api/billing/create-checkout-session", async (req, res) => {
     if (!userId) {
       return jsonError(res, "userId is required.");
     }
-    const { rows: userRows } = await query("select role from users where id = $1", [userId]);
-    if (!userRows[0] || userRows[0].role !== "provider") {
+    const { rows: userRows } = await query(
+      "select role, email from users where id = $1",
+      [userId]
+    );
+    const user = userRows[0];
+    if (!user || user.role !== "provider") {
       return jsonError(res, "Subscriptions are available for providers only.", 403);
+    }
+    if (isAdminProEmail(user.email || email)) {
+      await ensureAdminUnlimitedSubscription(userId);
+      return res.json({
+        bypass: true,
+        message: "Admin account has unlimited Pro access.",
+      });
     }
     const priceId = await getStripePriceId();
     const customerId = await getOrCreateStripeCustomer({ email, userId });
@@ -440,6 +505,24 @@ app.get("/api/billing/status", async (req, res) => {
     return jsonError(res, "userId is required.");
   }
   try {
+    const { rows: userRows } = await query(
+      "select id, email, role, created_at from users where id = $1",
+      [userId]
+    );
+    const user = userRows[0];
+    if (!user || user.role !== "provider") {
+      return res.json({ access: false, subscription: null });
+    }
+    if (isAdminProEmail(user.email)) {
+      const subscription = await ensureAdminUnlimitedSubscription(user.id);
+      return res.json({
+        access: true,
+        status: "active",
+        trialEndsAt: null,
+        subscription,
+      });
+    }
+
     const synced = await syncStripeSubscription(userId);
     const { rows } = await query(
       `select * from subscriptions
@@ -450,14 +533,6 @@ app.get("/api/billing/status", async (req, res) => {
     );
     let subscription = rows[0] || synced || null;
     if (!subscription) {
-      const { rows: userRows } = await query(
-        "select role, created_at from users where id = $1",
-        [userId]
-      );
-      const user = userRows[0];
-      if (!user || user.role !== "provider") {
-        return res.json({ access: false, subscription: null });
-      }
       const createdAt = new Date(user.created_at);
       const trialEndsAt = new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
       const status = trialEndsAt > new Date() ? "trialing" : "expired";
@@ -527,9 +602,17 @@ app.post("/api/billing/confirm-checkout", async (req, res) => {
     return jsonError(res, "sessionId and userId are required.");
   }
   try {
-    const { rows: userRows } = await query("select role from users where id = $1", [userId]);
-    if (!userRows[0] || userRows[0].role !== "provider") {
+    const { rows: userRows } = await query(
+      "select role, email from users where id = $1",
+      [userId]
+    );
+    const user = userRows[0];
+    if (!user || user.role !== "provider") {
       return jsonError(res, "Subscriptions are available for providers only.", 403);
+    }
+    if (isAdminProEmail(user.email)) {
+      const subscription = await ensureAdminUnlimitedSubscription(userId);
+      return res.json({ success: true, subscription });
     }
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     const stripeSubscriptionId = session.subscription;
@@ -567,6 +650,14 @@ app.post("/api/billing/record-checkout", async (req, res) => {
     return jsonError(res, "userId and status are required.");
   }
   try {
+    const { rows: userRows } = await query(
+      "select email from users where id = $1",
+      [userId]
+    );
+    if (isAdminProEmail(userRows[0]?.email)) {
+      return res.json({ success: true, skipped: true });
+    }
+
     let amount = null;
     let planId = "pehd-pro-199";
     if (sessionId) {
@@ -1754,12 +1845,21 @@ app.post("/api/functions/:name", async (req, res) => {
               params
             );
           }
-          await query(
-            `insert into subscriptions
-             (user_id, plan_id, status, billing_cycle, trial_ends_at)
-             values ($1,$2,$3,$4, now() + interval '7 days')`,
-            [user.id, "pehd-pro-199", "trialing", "monthly"]
-          );
+          if (isAdminProEmail(user.email)) {
+            await query(
+              `insert into subscriptions
+               (user_id, plan_id, status, billing_cycle, trial_ends_at, started_at)
+               values ($1,$2,'active','lifetime',null,now())`,
+              [user.id, "pehd-pro-admin"]
+            );
+          } else {
+            await query(
+              `insert into subscriptions
+               (user_id, plan_id, status, billing_cycle, trial_ends_at)
+               values ($1,$2,$3,$4, now() + interval '7 days')`,
+              [user.id, "pehd-pro-199", "trialing", "monthly"]
+            );
+          }
         } else if (requestedRole === "patient") {
           const { rows: profileRows } = await query(
             `insert into patient_profiles (user_id, allergies, conditions, medications)
