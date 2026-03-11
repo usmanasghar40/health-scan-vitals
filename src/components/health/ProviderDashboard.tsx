@@ -96,16 +96,6 @@ const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
     { label: 'Telehealth Today', value: todayAppointments.filter(a => a.isTelehealth).length, icon: Video, color: 'text-purple-400', bgColor: 'bg-purple-500/20' },
     { label: 'Completed Today', value: todayAppointments.filter(a => a.status === 'completed').length, icon: CheckCircle, color: 'text-emerald-400', bgColor: 'bg-emerald-500/20' },
   ];
-  const trialDaysRemaining = subscriptionStatus?.trialEndsAt
-    ? Math.max(
-        0,
-        Math.ceil(
-          (new Date(subscriptionStatus.trialEndsAt).getTime() - Date.now()) /
-            (1000 * 60 * 60 * 24)
-        )
-      )
-    : null;
-
   if (!isAuthenticated) {
     return (
       <div className="space-y-8">
@@ -126,16 +116,6 @@ const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
 
   return (
     <div className="space-y-8">
-      {/* Trial Banner */}
-      {subscriptionStatus?.status !== 'active' &&
-        subscriptionStatus?.trialEndsAt &&
-        trialDaysRemaining !== null &&
-        trialDaysRemaining > 0 && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200">
-          Your free trial ends in {trialDaysRemaining} days. Subscribe now or features will be
-          locked after the trial.
-        </div>
-      )}
       {!subscriptionStatus && (
         <div className="rounded-2xl border border-slate-700/70 bg-slate-900/60 px-4 py-3 text-slate-300">
           Subscription status not available. Open the Subscription tab to refresh your trial details.
